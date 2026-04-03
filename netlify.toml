@@ -1,0 +1,20 @@
+[build]
+  command = "npm run build"
+  publish = "frontend/dist"
+
+[functions]
+  directory = "backend/functions"
+  node_bundle = true
+
+[[redirects]]
+  from = "/api/*"
+  to = "/.netlify/functions/api/:splat"
+  status = 200
+  force = true
+
+[[headers]]
+  for = "/*"
+  [headers.values]
+    Access-Control-Allow-Origin = "*"
+    Access-Control-Allow-Headers = "Content-Type, Authorization, x-gemini-api-key"
+    Access-Control-Allow-Methods = "GET, POST, PUT, DELETE, OPTIONS"
