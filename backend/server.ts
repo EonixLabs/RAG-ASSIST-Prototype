@@ -1,11 +1,16 @@
 import 'dotenv/config';
 import express from 'express';
+import cors from 'cors';
 import { connectDB } from './server/config/db.js';
 import chatRoutes from './server/routes/chat.routes.js';
 import { logger } from './server/utils/logger.js';
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+
+app.use(cors({
+  allowedHeaders: ['Content-Type', 'Authorization', 'x-gemini-api-key'],
+}));
 
 app.use(express.json());
 

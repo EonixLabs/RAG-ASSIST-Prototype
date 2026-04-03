@@ -1,6 +1,6 @@
 import { ChatPromptTemplate, MessagesPlaceholder } from '@langchain/core/prompts';
 import { StringOutputParser } from '@langchain/core/output_parsers';
-import { chatModel } from './llm.service.js';
+import { getChatModel } from './llm.service.js';
 import { retrieverService } from './retriever.service.js';
 import { memoryService } from './memory.service.js';
 
@@ -37,7 +37,7 @@ export class RAGService {
     ]);
   }
 
-  async *getChatStream(sessionId: string, message: string, domain?: string) {
+  async *getChatStream(sessionId: string, message: string, domain?: string, apiKey?: string) {
     const displayDomain = (domain && domain !== 'Normal' && domain !== 'Areas')
       ? domain
       : "General Compliance";
@@ -48,7 +48,7 @@ export class RAGService {
     }
 
     // 1. Hybrid Retrieval & Reranking orchestrated from new service
-    const topChunks = await retrieverService.retrieveContext(message, preFilter);
+    const topChunks = await retrieverService.retrieveContext(message, preFilter, apiKey);
 
     // 2. Context Formatting
     const contextText = topChunks.map(c =>
@@ -59,6 +59,7 @@ export class RAGService {
     const history = memoryService.getHistory(sessionId);
 
     // 4. Chain Preparation
+    const chatModel = getChatModel(apiKey);
     const chain = this.promptTemplate
       .pipe(chatModel)
       .pipe(new StringOutputParser());
@@ -137,7 +138,7 @@ export class RAGService {
     };
   }
 
-  async getChatAnswer(message: string, domain?: string, sessionId: string = 'eval-session'): Promise<{ answer: string, sources: any[] }> {
+  async getChatAnswer(message: string, domain?: string, sessionId: string = 'eval-session', apiKey?: string): Promise<{ answer: string, sources: any[] }> {
     const displayDomain = (domain && domain !== 'Normal' && domain !== 'Areas')
       ? domain
       : "General Compliance";
@@ -147,7 +148,7 @@ export class RAGService {
       preFilter = { "metadata.domain": domain };
     }
 
-    const topChunks = await retrieverService.retrieveContext(message, preFilter);
+    const topChunks = await retrieverService.retrieveContext(message, preFilter, apiKey);
 
     const contextText = topChunks.map(c =>
       `[Source: ${c.metadata.document_title}, Section: ${c.metadata.section_header}] Content: ${c.pageContent}`
@@ -155,6 +156,7 @@ export class RAGService {
 
     const history = memoryService.getHistory(sessionId);
 
+    const chatModel = getChatModel(apiKey);
     const chain = this.promptTemplate
       .pipe(chatModel)
       .pipe(new StringOutputParser());

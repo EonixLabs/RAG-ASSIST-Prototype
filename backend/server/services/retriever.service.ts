@@ -19,9 +19,9 @@ async function rerankChunks(query: string, candidates: Document[]) {
     // Use a Set to count UNIQUE keyword matches, preventing long-chunk bias
     let matchCount = 0;
     queryTokens.forEach(t => {
-       if (textLow.includes(t)) matchCount++;
+      if (textLow.includes(t)) matchCount++;
     });
-    
+
     const baseScore = c.metadata?.score || 0;
     const boost = matchCount * 0.05; // Lowered the boost weight
     return {
@@ -61,74 +61,88 @@ export class RetrieverService {
     });
   }
 
-  async retrieveContext(message: string, preFilter: any = {}) {
-    const cacheKey = message + JSON.stringify(preFilter);
+  async retrieveContext(message: string, preFilter: any = {}, apiKey?: string) {
+    const cacheKey = message + JSON.stringify(preFilter) + (apiKey || 'default');
     const cached = retrievalCache.get(cacheKey);
     if (cached && Date.now() - cached.timestamp < CACHE_TTL) {
-       return cached.data;
+      return cached.data;
     }
 
     const limit = 15;
-    
+
+    let currentVectorStore = this.vectorStore;
+    if (apiKey) {
+      const embeddings = new GoogleGenerativeAIEmbeddings({
+        model: EMBEDDING_MODEL,
+        apiKey: apiKey
+      });
+      currentVectorStore = new MongoDBAtlasVectorSearch(embeddings, {
+        collection: this.collection as any,
+        textKey: 'content',
+        embeddingKey: 'embedding',
+        indexName: 'vector_index'
+      });
+    }
+
     // a) Dense Vector Search
-    const denseResults = await this.vectorStore.similaritySearch(message, limit, preFilter);
-    
+    const denseResults = await currentVectorStore.similaritySearch(message, limit, preFilter);
+
     // b) Sparse Text Search
     let matchStage: any = { $text: { $search: message } };
     if (Object.keys(preFilter).length > 0) {
       matchStage = { ...matchStage, ...preFilter };
     }
-    
+
     let sparseRaw: any[] = [];
     try {
-        sparseRaw = await this.collection.find(
-          matchStage,
-          { projection: { score: { $meta: "textScore" } } }
-        ).sort({ score: { $meta: "textScore" } }).limit(limit).toArray();
+      sparseRaw = await this.collection.find(
+        matchStage,
+        { projection: { score: { $meta: "textScore" } } }
+      ).sort({ score: { $meta: "textScore" } }).limit(limit).toArray();
     } catch (e) {
-        console.warn("Sparse search failed (index might be building). Using dense only.");
+      console.warn("Sparse search failed (index might be building). Using dense only.");
     }
 
     const sparseResults = sparseRaw.map((r: any) => new Document({
-       pageContent: r.content,
-       metadata: { ...r.metadata, _id: r._id?.toString(), score: r.score }
+      pageContent: r.content,
+      metadata: { ...r.metadata, _id: r._id?.toString(), score: r.score }
     }));
 
     // c) Reciprocal Rank Fusion (RRF)
     const fused = new Map<string, { doc: Document, score: number }>();
-    const k = 60; 
-    
+    const k = 60;
+
     denseResults.forEach((doc, rank) => {
-       const id = doc.metadata._id || doc.pageContent;
-       fused.set(id, { doc, score: 1 / (k + rank) });
+      const id = doc.metadata._id || doc.pageContent;
+      fused.set(id, { doc, score: 1 / (k + rank) });
     });
 
     sparseResults.forEach((doc, rank) => {
-       const id = doc.metadata._id || doc.pageContent;
-       if (fused.has(id)) {
-           fused.get(id)!.score += 1 / (k + rank);
-       } else {
-           fused.set(id, { doc, score: 1 / (k + rank) });
-       }
+      const id = doc.metadata._id || doc.pageContent;
+      if (fused.has(id)) {
+        fused.get(id)!.score += 1 / (k + rank);
+      } else {
+        fused.set(id, { doc, score: 1 / (k + rank) });
+      }
     });
 
     // Explicit Deduplication
     const uniqueDocs = new Map<string, Document>();
     Array.from(fused.values()).forEach(f => {
-       const id = f.doc.metadata._id || f.doc.pageContent;
-       if (!uniqueDocs.has(id)) {
-           uniqueDocs.set(id, f.doc);
-       }
+      const id = f.doc.metadata._id || f.doc.pageContent;
+      if (!uniqueDocs.has(id)) {
+        uniqueDocs.set(id, f.doc);
+      }
     });
 
     const hybridResults = Array.from(fused.values())
-        .sort((a, b) => b.score - a.score)
-        .map(f => uniqueDocs.get(f.doc.metadata._id || f.doc.pageContent)!)
-        .slice(0, 15);
+      .sort((a, b) => b.score - a.score)
+      .map(f => uniqueDocs.get(f.doc.metadata._id || f.doc.pageContent)!)
+      .slice(0, 15);
 
     // 2. Re-ranking (Lightweight)
     const finalTopChunks = await rerankChunks(message, hybridResults);
-    
+
     // Save to Cache
     retrievalCache.set(cacheKey, { data: finalTopChunks, timestamp: Date.now() });
     return finalTopChunks;
