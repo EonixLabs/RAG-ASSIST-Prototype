@@ -19,8 +19,7 @@ import {
   User,
   Trash2,
   Pencil,
-  Check,
-  Settings
+  Check
 } from 'lucide-react';
 
 const EonixLogo = () => (
@@ -63,27 +62,7 @@ export default function App() {
   const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
   const [editContent, setEditContent] = useState('');
   const [selectedDomain, setSelectedDomain] = useState('Areas');
-  const [isApiKeyModalOpen, setIsApiKeyModalOpen] = useState(false);
-  const [apiKeyInput, setApiKeyInput] = useState('');
   const messagesEndRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    const key = sessionStorage.getItem('geminiApiKey');
-    if (!key) {
-       setIsApiKeyModalOpen(true);
-    } else {
-       setApiKeyInput(key);
-    }
-  }, []);
-
-  const saveApiKey = () => {
-    if (apiKeyInput.trim()) {
-      sessionStorage.setItem('geminiApiKey', apiKeyInput.trim());
-    } else {
-      sessionStorage.removeItem('geminiApiKey');
-    }
-    setIsApiKeyModalOpen(false);
-  };
 
   const fetchChatResponse = async (text: string, currentMessages: Message[]) => {
     setIsLoading(true);
@@ -94,15 +73,9 @@ export default function App() {
     setMessages([...currentMessages, tempMsg]);
 
     try {
-      const customKey = sessionStorage.getItem('geminiApiKey');
-      const headersToSent: any = { 'Content-Type': 'application/json' };
-      if (customKey) {
-         headersToSent['x-gemini-api-key'] = customKey;
-      }
-
       const res = await fetch('/api/chat', {
         method: 'POST',
-        headers: headersToSent,
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ message: text, domain: selectedDomain, sessionId: sessionId })
       });
 
@@ -257,18 +230,9 @@ export default function App() {
 
       {/* Header */}
       <header className="border-b border-white/10 bg-[#111113]/80 backdrop-blur-md p-4 sticky top-0 z-20">
-        <div className="max-w-4xl mx-auto flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <EonixLogo />
-            <h1 className="text-lg font-medium text-white tracking-wide">EONIXLABS Assistant</h1>
-          </div>
-          <button 
-            onClick={() => setIsApiKeyModalOpen(true)}
-            className="p-2 rounded-full hover:bg-white/10 text-gray-400 hover:text-white transition-colors"
-            title="Settings"
-          >
-            <Settings size={20} />
-          </button>
+        <div className="max-w-4xl mx-auto flex items-center gap-3">
+          <EonixLogo />
+          <h1 className="text-lg font-medium text-white tracking-wide">EONIXLABS Assistant</h1>
         </div>
       </header>
 
@@ -450,43 +414,6 @@ export default function App() {
               </div>
             </div>
 
-          </div>
-        </div>
-      )}
-
-      {/* API Key Modal */}
-      {isApiKeyModalOpen && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in duration-200">
-          <div className="bg-[#111113] border border-white/10 rounded-2xl w-full max-w-md shadow-2xl p-6 relative">
-            <h3 className="text-xl font-medium text-white mb-2">Google AI Studio Setup</h3>
-            <p className="text-sm text-gray-400 mb-6">
-              To personalize your assistant, please provide your Google AI Studio API key. 
-              If you don't have one, <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noreferrer" className="text-blue-400 hover:text-blue-300 underline">know my google ai studio api key</a>.
-            </p>
-            <div className="mb-6">
-              <label className="block text-xs uppercase text-gray-500 mb-2 tracking-wider">API Key</label>
-              <input 
-                type="password"
-                value={apiKeyInput}
-                onChange={(e) => setApiKeyInput(e.target.value)}
-                placeholder="AIzaSy..."
-                className="w-full bg-[#1a1a1c] border border-white/10 rounded-xl px-4 py-3 text-white outline-none focus:border-violet-500 transition-colors"
-              />
-            </div>
-            <div className="flex justify-end gap-3">
-              <button 
-                onClick={() => setIsApiKeyModalOpen(false)}
-                className="px-4 py-2 rounded-xl text-sm font-medium text-gray-400 hover:text-white hover:bg-white/5 transition-colors"
-              >
-                 Skip (Default System Key)
-              </button>
-              <button 
-                onClick={saveApiKey}
-                className="px-4 py-2 rounded-xl text-sm font-medium bg-violet-600 hover:bg-violet-700 text-white transition-colors"
-              >
-                 Save & Proceed
-              </button>
-            </div>
           </div>
         </div>
       )}

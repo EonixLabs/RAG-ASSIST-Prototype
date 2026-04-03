@@ -11,13 +11,6 @@ export const handleChat = async (req: Request, res: Response): Promise<void> => 
 
   try {
     const { message, domain, sessionId } = req.body;
-    let apiKey = req.headers['x-gemini-api-key'] as string | undefined;
-    
-    // THE FIX: Sanitize the incoming API Key header. 
-    // This prevents the "Stringified Null" trap from crashing Gemini.
-    if (!apiKey || apiKey === 'null' || apiKey === 'undefined' || apiKey.trim() === '') {
-      apiKey = undefined; 
-    }
     
     if (!message) {
       res.status(400).json({ error: 'Message is required' });
@@ -31,7 +24,7 @@ export const handleChat = async (req: Request, res: Response): Promise<void> => 
     res.setHeader('Content-Type', 'text/event-stream');
     res.setHeader('Cache-Control', 'no-cache');
     res.setHeader('Connection', 'keep-alive');
-    res.flushHeaders(); // flush the headers to establish connection before stream iteration
+    res.flushHeaders(); // flush the headers to establish connecting before stream iteration
 
     // Handle client disconnect to prevent memory leaks from dangling streams
     let stream: any;
@@ -45,7 +38,7 @@ export const handleChat = async (req: Request, res: Response): Promise<void> => 
     let buffer = "";
     
     // Start consuming the streaming generator
-    stream = ragService.getChatStream(activeSessionId, message, domain, apiKey);
+    stream = ragService.getChatStream(activeSessionId, message, domain);
 
     for await (const chunkObject of stream) {
         if (chunkObject.token) {
@@ -71,15 +64,13 @@ export const handleChat = async (req: Request, res: Response): Promise<void> => 
     res.write('data: [DONE]\n\n');
     res.end();
 
-  } catch (error: any) {
-    console.error("EXACT ERROR", error);
-    logger.error("Chat API Error:", { error: error?.message || error });
-    
+  } catch (error) {
+    logger.error("Chat API Error:", { error });
     if (!res.headersSent) {
       res.status(500).json({ error: "I'm having trouble generating a response right now." });
     } else {
       // If we already started streaming, we can only send a final error event and end
-      res.write(`data: ${JSON.stringify({ error: "I'm having trouble generating a response right now." })}\n\n`);
+      res.write(`data: {"error": "I'm having trouble generating a response right now."}\n\n`);
       res.end();
     }
   }
